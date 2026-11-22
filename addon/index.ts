@@ -4825,7 +4825,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             return res.status(404).send({ err: "User configuration not found." });
         }
         
-        const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
+        const { profileForViewer, scopeConfigToProfile, listProfiles } = require('./lib/jellyfin/profiles');
         const profile = profileForViewer(config, userUUID, req.query.viewer);
         if (profile === undefined) {
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -4833,6 +4833,8 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             return refuseUnknownViewer(res, 'Manifest', userUUID, req.query.viewer);
         }
         if (profile) req.viewerTags = profile.tags;
+        // No named viewer is the installation, which hides whatever the main person hides.
+        const excludeTags = (profile ?? listProfiles(config, userUUID)[0])?.excludeTags ?? [];
         // Only which catalogs are listed follows the user's accounts; the rest is the stored config's.
         const viewerConfig = profile?.id ? scopeConfigToProfile(config, userUUID, profile.id) : undefined;
 
@@ -4851,11 +4853,11 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         if (refusedFilters.length > 0) {
             consola.warn(`[Manifest] User ${userUUID} asked for ${refusedFilters.join(', ')}, which does not tighten their configured ${config.ageRating || 'None'}`);
         }
-        consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}${tags.length ? ` (tags: ${tags.join(', ')})` : ''}`);
+        consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}${tags.length ? ` (tags: ${tags.join(', ')})` : ''}${excludeTags.length ? ` (hidden: ${excludeTags.join(', ')})` : ''}`);
         if (unknownTags.length > 0) {
             consola.warn(`[Manifest] User ${userUUID} asked for ${unknownTags.join(', ')}, which no catalog is tagged with`);
         }
-        const manifest = await getManifest(config, { tags, userUUID, ...(viewerConfig ? { viewerConfig } : {}) });
+        const manifest = await getManifest(config, { tags, excludeTags, userUUID, ...(viewerConfig ? { viewerConfig } : {}) });
             if (!manifest) {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Headers', '*');
@@ -4889,6 +4891,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             configVersion: config.configVersion || Date.now(),
             timestamp: new Date().toISOString(),
             ...(tags.length > 0 ? { tags } : {}),
+            ...(excludeTags.length > 0 ? { excludeTags } : {}),
             ...(unknownTags.length > 0 ? { unknownTags } : {}),
             ...(ratingOverride ? { contentRating: ratingOverride } : {}),
             ...(hidesUnrated ? { unrated: 'hidden' } : {}),

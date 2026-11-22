@@ -210,7 +210,7 @@ function PersonSummary({ person, className }: { person: Person; className?: stri
   } else if (person.main) {
     parts.push('No trackers');
   }
-  if (user.tags.length) parts.push(`${person.catalogCount} catalog${person.catalogCount === 1 ? '' : 's'}`);
+  if (user.tags.length || user.excludeTags?.length) parts.push(`${person.catalogCount} catalog${person.catalogCount === 1 ? '' : 's'}`);
   return (
     <span className={cn('flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-muted-foreground', className)}>
       {parts.map((part, index) => (
@@ -344,8 +344,17 @@ function WhoChoice({ selected, title, hint, disabled, onSelect }: { selected: bo
 function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, jellyfin, stremioOn }: PersonDetailProps) {
   const { name, avatar, main, user, catalogCount, trackerOptions, watchlistOptions, watchedPoint, watchedNote, onChange, onRemove, onForget, accountsEditor } = person;
   const chosen = user.tags ?? [];
+  const hidden = user.excludeTags ?? [];
   const toggleTag = (tag: string) =>
-    onChange({ tags: chosen.includes(tag) ? chosen.filter((t) => t !== tag) : [...chosen, tag] });
+    onChange({
+      tags: chosen.includes(tag) ? chosen.filter((t) => t !== tag) : [...chosen, tag],
+      excludeTags: hidden.filter((t) => t !== tag),
+    });
+  const toggleHide = (tag: string) =>
+    onChange({
+      excludeTags: hidden.includes(tag) ? hidden.filter((t) => t !== tag) : [...hidden, tag],
+      tags: chosen.filter((t) => t !== tag),
+    });
   const caps = allTags
     .filter((t) => chosen.includes(t.name) && t.ageRating && t.ageRating !== 'None')
     .map((t) => t.ageRating as string);
@@ -501,6 +510,7 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
 
         <Group anchor={`${key}.catalogs`} title="Catalogs" icon={<LayoutGrid className="h-3.5 w-3.5" />}>
           {allTags.length > 0 ? (
+            <>
             <SettingRow label="Catalogs" description="The catalog tags this person sees. None picked shows every catalog.">
               <div className="flex flex-wrap items-center gap-1.5">
                 {allTags.map((t) => (
@@ -516,10 +526,25 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
                 ))}
               </div>
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                {chosen.length === 0 ? 'Every catalog' : `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`}
+                {chosen.length === 0 && hidden.length === 0 ? 'Every catalog' : `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`}
                 {caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null}
               </p>
             </SettingRow>
+            <SettingRow label="Hide" description="Catalogs carrying any of these are hidden from this person.">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {allTags.map((t) => (
+                  <TagChip
+                    key={t.name}
+                    name={t.name}
+                    color={t.color}
+                    onClick={() => toggleHide(t.name)}
+                    pressed={hidden.includes(t.name)}
+                    dimmed={hidden.length > 0 && !hidden.includes(t.name)}
+                  />
+                ))}
+              </div>
+            </SettingRow>
+            </>
           ) : (
             <SettingRow
               label="Catalogs"
@@ -723,9 +748,16 @@ export function HouseholdUsers() {
   const stremioOn = scrobblesStremio(config);
   const mainServices = mainConnectedServices(config);
 
-  const catalogCountFor = (chosen: string[]) => {
-    const wanted = new Set(chosen.map((t) => t.toLowerCase()));
-    return (config.catalogs ?? []).filter((c) => c.enabled && (c.tags ?? []).some((t) => wanted.has(t.toLowerCase()))).length;
+  const catalogCountFor = (chosen: string[], hidden: string[]) => {
+    const hide = new Set(hidden.map((t) => t.toLowerCase()));
+    const wanted = new Set(chosen.filter((t) => !hide.has(t.toLowerCase())).map((t) => t.toLowerCase()));
+    return (config.catalogs ?? []).filter((c) => {
+      if (!c.enabled) return false;
+      const own = (c.tags ?? []).map((t) => t.toLowerCase());
+      if (hide.size > 0 && own.some((t) => hide.has(t))) return false;
+      if (wanted.size === 0) return true;
+      return own.some((t) => wanted.has(t));
+    }).length;
   };
 
   const [watchedPoints, setWatchedPoints] = useState<{ serverDefault: number; byProfile: Record<string, number | null> } | null>(null);
@@ -785,7 +817,12 @@ export function HouseholdUsers() {
   const updateUser = (id: string, patch: Partial<JellyfinUser>) =>
     setConfig(prev => ({
       ...prev,
-      jellyfinUsers: (prev.jellyfinUsers ?? []).map(u => (u.id === id ? { ...u, ...patch } : u)),
+      jellyfinUsers: (prev.jellyfinUsers ?? []).map(u => {
+        if (u.id !== id) return u;
+        const next = { ...u, ...patch };
+        if (!next.excludeTags?.length) delete next.excludeTags;
+        return next;
+      }),
     }));
   const removeUser = async (user: JellyfinUser) => {
     const held = connectedServices(user);
@@ -863,6 +900,7 @@ export function HouseholdUsers() {
       id: '',
       name: mainName,
       tags: config.jellyfinUserTags ?? [],
+      excludeTags: config.jellyfinUserExcludeTags ?? [],
       trackerSource: config.jellyfinResumeSource ?? 'auto',
       skipSource: config.jellyfinSkipSource ?? 'auto',
       watchlistServices: config.jellyfinWatchlistServices,
@@ -870,7 +908,7 @@ export function HouseholdUsers() {
       pin: config.jellyfinUserPin,
       streamUrl: config.jellyfinStreamUrl,
     },
-    catalogCount: catalogCountFor(config.jellyfinUserTags ?? []),
+    catalogCount: catalogCountFor(config.jellyfinUserTags ?? [], config.jellyfinUserExcludeTags ?? []),
     trackerOptions: resumeSourceOptions,
     watchlistOptions,
     watchedPoint: watchedPointFor('', mainName),
@@ -882,6 +920,7 @@ export function HouseholdUsers() {
       ...('name' in patch ? { jellyfinUserName: patch.name } : {}),
       ...('avatar' in patch ? { jellyfinUserAvatar: patch.avatar } : {}),
       ...('tags' in patch ? { jellyfinUserTags: patch.tags?.length ? patch.tags : undefined } : {}),
+      ...('excludeTags' in patch ? { jellyfinUserExcludeTags: patch.excludeTags?.length ? patch.excludeTags : undefined } : {}),
       ...('trackerSource' in patch ? { jellyfinResumeSource: patch.trackerSource as typeof prev.jellyfinResumeSource } : {}),
       ...('skipSource' in patch ? { jellyfinSkipSource: patch.skipSource === 'auto' ? undefined : patch.skipSource } : {}),
       ...('watchlistServices' in patch ? { jellyfinWatchlistServices: patch.watchlistServices } : {}),
@@ -897,7 +936,7 @@ export function HouseholdUsers() {
       name: user.name,
       avatar: user.avatar,
       user,
-      catalogCount: catalogCountFor(user.tags),
+      catalogCount: catalogCountFor(user.tags, user.excludeTags ?? []),
       trackerOptions: holder ? trackerOptionsFor(user) : resumeSourceOptions,
       watchlistOptions: holder ? watchlistOptionsFor(user) : watchlistOptions,
       watchedPoint: watchedPointFor(user.id, user.name),

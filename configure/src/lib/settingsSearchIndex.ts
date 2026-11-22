@@ -115,8 +115,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   {
     id: 'people.catalogTags', section: 'people', anchor: 'main.catalogs',
     label: 'Catalogs per Person',
-    description: 'The catalog tags each person sees, and their content rating.',
-    keywords: ['tags', 'kids', 'children', 'rating', 'catalogs', 'age'],
+    description: 'The catalog tags each person sees or hides, and their content rating.',
+    keywords: ['tags', 'kids', 'children', 'rating', 'catalogs', 'age', 'hide', 'exclude'],
   },
   {
     id: 'people.alsoKnownAs', section: 'people', anchor: null,

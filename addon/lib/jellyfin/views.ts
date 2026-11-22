@@ -6,7 +6,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder } from './dto';
-import { profileTags } from './profiles';
+import { profileExcludeTags, profileTags } from './profiles';
 import { viewerReadsExtensions } from './viewer';
 import { isCollectionCatalogId } from '../collectionBuilder/aiostreamsCollections';
 import { configCatalogFor, placeCollections, rowOptionsOf } from '../collectionBuilder/homeOrder';
@@ -62,13 +62,15 @@ export function viewTypeFor(catalog: { id: string; type: string }): string | nul
 
 export async function getCatalogs(userUUID: string, config: any): Promise<CatalogRef[]> {
   const tags = profileTags(config);
+  const excludeTags = profileExcludeTags(config);
+  
   const shape = createHash('md5').update(JSON.stringify(config?.catalogs ?? null)).digest('hex').slice(0, 12);
-  const key = `${userUUID}:${tags.map((t) => t.toLowerCase()).sort().join(',')}:${shape}:${accountOwner(config)}:${servedAccountsKey(config)}`;
+  const key = `${userUUID}:${tags.map((t) => t.toLowerCase()).sort().join(',')}:hide:${excludeTags.map((t) => t.toLowerCase()).sort().join(',')}:${shape}:${accountOwner(config)}:${servedAccountsKey(config)}`;
   const cached = catalogCache.get(key);
   if (cached) return cached;
 
   try {
-    const manifest = await getManifest(config, { tags, userUUID });
+    const manifest = await getManifest(config, { tags, excludeTags, userUUID });
     // Builder collections are served here as box sets already, not as their AIOStreams catalogs.
     const catalogs: CatalogRef[] = (Array.isArray(manifest?.catalogs) ? manifest.catalogs : [])
       .filter((c: CatalogRef) => !isCollectionCatalogId(c.id));

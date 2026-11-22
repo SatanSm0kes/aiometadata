@@ -41,11 +41,12 @@ export function PeopleList() {
   const several = users.length > 0;
   const handoff = showsAlsoKnownAs(config, users);
 
-  const badgesFor = ({ pin, tags, streamUrl, handoffNames, main }: { pin?: string; tags?: string[]; streamUrl?: string; handoffNames?: string[]; main: boolean }) => {
+  const badgesFor = ({ pin, tags, excludeTags, streamUrl, handoffNames, main }: { pin?: string; tags?: string[]; excludeTags?: string[]; streamUrl?: string; handoffNames?: string[]; main: boolean }) => {
     const badges: string[] = [];
     if (pinInvalid(pin)) badges.push('PIN incomplete');
     else if (pin) badges.push('PIN');
     if (tags?.length) badges.push(`${tags.length} catalog tag${tags.length === 1 ? '' : 's'}`);
+    if (excludeTags?.length) badges.push(`hides ${excludeTags.length} tag${excludeTags.length === 1 ? '' : 's'}`);
     if (!main && streamUrl?.trim()) badges.push('Own stream addon');
     if (handoff && handoffNames?.length) badges.push(`Also known as ${handoffNames.join(', ')}`);
     return badges;
@@ -57,8 +58,8 @@ export function PeopleList() {
     avatar,
     main,
     badges: user
-      ? badgesFor({ pin: user.pin, tags: user.tags, streamUrl: user.streamUrl, handoffNames: user.handoffNames, main: false })
-      : badgesFor({ pin: config.jellyfinUserPin, tags: config.jellyfinUserTags, handoffNames: config.jellyfinUserHandoffNames, main: true }),
+      ? badgesFor({ pin: user.pin, tags: user.tags, excludeTags: user.excludeTags, streamUrl: user.streamUrl, handoffNames: user.handoffNames, main: false })
+      : badgesFor({ pin: config.jellyfinUserPin, tags: config.jellyfinUserTags, excludeTags: config.jellyfinUserExcludeTags, handoffNames: config.jellyfinUserHandoffNames, main: true }),
     trackers: user ? connectedServices(user) : mainConnectedServices(config),
     sharesYours: user?.trackers === true,
   }));

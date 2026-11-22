@@ -922,7 +922,7 @@ async function lumiereGenreOptions(): Promise<Record<'movie' | 'series', string[
   }
 }
 
-async function getManifest(config: any, opts: { tags?: string[]; userUUID?: string; viewerConfig?: any } = {}): Promise<any> {
+async function getManifest(config: any, opts: { tags?: string[]; excludeTags?: string[]; userUUID?: string; viewerConfig?: any } = {}): Promise<any> {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
 
@@ -934,13 +934,19 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
 
   // Already resolved to their stored casing by resolveManifestTags. A catalog carrying
   // any one of them is in, so several profiles install as a single addon.
+  // Hide tags remove a catalog even when it would otherwise be listed, including one
+  // owned by the viewer's own account. They never turn the allow-list on.
   const tags = Array.isArray(opts.tags) ? opts.tags.filter(Boolean) : [];
   const tagSet = new Set(tags.map((t: string) => t.toLowerCase()));
+  const excludeTags = Array.isArray(opts.excludeTags) ? opts.excludeTags.filter(Boolean) : [];
+  const excludeSet = new Set(excludeTags.map((t: string) => t.toLowerCase()));
+  const carriesExcludedTag = (list: any): boolean =>
+    excludeSet.size > 0 && Array.isArray(list) && list.some((t: any) => excludeSet.has(String(t).toLowerCase()));
   const jikanEnabled = jikan.isJikanEnabled();
   // A named household user is listed what their own accounts serve; nothing else reads their config.
   const servedBy = opts.viewerConfig ?? config;
   const enabledCatalogs = userCatalogs.filter((c: any) =>
-    c.enabled && servesCatalog(servedBy, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && (tagSet.size === 0 || rowOwner(c) || (Array.isArray(c.tags) && c.tags.some((t: any) => tagSet.has(String(t).toLowerCase()))))
+    c.enabled && servesCatalog(servedBy, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && !carriesExcludedTag(c.tags) && (tagSet.size === 0 || rowOwner(c) || (Array.isArray(c.tags) && c.tags.some((t: any) => tagSet.has(String(t).toLowerCase()))))
   );
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
@@ -1662,8 +1668,9 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
     const searchTags: Record<string, string[]> = config.search?.tags && typeof config.search.tags === 'object' ? config.search.tags : {};
     const searchIsTagged = Object.values(searchTags).some((list) => Array.isArray(list) && list.length > 0);
     const searchCarriesTag = (searchId: string): boolean => {
-      if (tagSet.size === 0 || !searchIsTagged) return true;
       const own = Array.isArray(searchTags[searchId]) ? searchTags[searchId] : [];
+      if (carriesExcludedTag(own)) return false;
+      if (tagSet.size === 0 || !searchIsTagged) return true;
       return own.some((t) => tagSet.has(String(t).toLowerCase()));
     };
 

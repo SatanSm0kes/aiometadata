@@ -9,6 +9,20 @@ const catalogKey = (c: CatalogConfig) => `${c.id}-${c.type}`;
 
 const sameTag = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+/** Maps each name. A null result drops it, and an empty list is stored as absent. */
+const rewriteTagList = (
+  list: string[] | undefined,
+  map: (name: string) => string | null
+): string[] | undefined => {
+  if (!list) return list;
+  const next: string[] = [];
+  for (const name of list) {
+    const mapped = map(name);
+    if (mapped && !next.some(t => sameTag(t, mapped))) next.push(mapped);
+  }
+  return next.length ? next : undefined;
+};
+
 const mapSearchTags = (
   bySearch: Record<string, string[]> | undefined,
   fn: (list: string[]) => string[]
@@ -62,6 +76,7 @@ export function useCatalogTags() {
     setConfig(prev => {
       const registry = prev.tags ?? [];
       if (registry.some(t => !sameTag(t.name, oldName) && sameTag(t.name, clean))) return prev;
+      const rename = (name: string) => (sameTag(name, oldName) ? clean : name);
       return {
         ...prev,
         tags: registry.map(t => (sameTag(t.name, oldName) ? { ...t, name: clean } : t)),
@@ -71,6 +86,13 @@ export function useCatalogTags() {
             : c
         ),
         search: { ...prev.search, tags: mapSearchTags(prev.search?.tags, list => list.map(t => (sameTag(t, oldName) ? clean : t))) },
+        jellyfinUserTags: rewriteTagList(prev.jellyfinUserTags, rename),
+        jellyfinUserExcludeTags: rewriteTagList(prev.jellyfinUserExcludeTags, rename),
+        jellyfinUsers: prev.jellyfinUsers?.map(u => ({
+          ...u,
+          tags: rewriteTagList(u.tags, rename) ?? [],
+          excludeTags: rewriteTagList(u.excludeTags, rename),
+        })),
       };
     });
   }, [setConfig]);
@@ -97,14 +119,24 @@ export function useCatalogTags() {
   }, [setConfig]);
 
   const deleteTag = useCallback((name: string) => {
-    setConfig(prev => ({
-      ...prev,
-      tags: (prev.tags ?? []).filter(t => !sameTag(t.name, name)),
-      catalogs: prev.catalogs.map(c =>
-        c.tags?.some(t => sameTag(t, name)) ? { ...c, tags: c.tags.filter(t => !sameTag(t, name)) } : c
-      ),
-      search: { ...prev.search, tags: mapSearchTags(prev.search?.tags, list => list.filter(t => !sameTag(t, name))) },
-    }));
+    setConfig(prev => {
+      const drop = (tag: string) => (sameTag(tag, name) ? null : tag);
+      return {
+        ...prev,
+        tags: (prev.tags ?? []).filter(t => !sameTag(t.name, name)),
+        catalogs: prev.catalogs.map(c =>
+          c.tags?.some(t => sameTag(t, name)) ? { ...c, tags: c.tags.filter(t => !sameTag(t, name)) } : c
+        ),
+        search: { ...prev.search, tags: mapSearchTags(prev.search?.tags, list => list.filter(t => !sameTag(t, name))) },
+        jellyfinUserTags: rewriteTagList(prev.jellyfinUserTags, drop),
+        jellyfinUserExcludeTags: rewriteTagList(prev.jellyfinUserExcludeTags, drop),
+        jellyfinUsers: prev.jellyfinUsers?.map(u => ({
+          ...u,
+          tags: rewriteTagList(u.tags, drop) ?? [],
+          excludeTags: rewriteTagList(u.excludeTags, drop),
+        })),
+      };
+    });
   }, [setConfig]);
 
   const addTagToCatalogs = useCallback((keys: Set<string>, name: string, color?: TagColorKey, filters?: TagFilters) => {

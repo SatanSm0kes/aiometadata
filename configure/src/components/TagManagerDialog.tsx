@@ -53,16 +53,24 @@ export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) 
 
   const profilesByTag = useMemo(() => {
     const out = new Map<string, string[]>();
-    const add = (name: string, held: string[] | undefined) => {
+    const add = (name: string, held: string[] | undefined, hides: boolean) => {
+      const label = hides ? `${name} (hides)` : name;
       for (const tag of held ?? []) {
         const key = tag.toLowerCase();
-        out.set(key, [...(out.get(key) ?? []), name]);
+        const list = out.get(key) ?? [];
+        if (!list.includes(label)) list.push(label);
+        out.set(key, list);
       }
     };
-    add(config.jellyfinUserName || config.addonName || 'You', config.jellyfinUserTags);
-    for (const user of config.jellyfinUsers ?? []) add(user.name, user.tags);
+    const you = config.jellyfinUserName || config.addonName || 'You';
+    add(you, config.jellyfinUserTags, false);
+    add(you, config.jellyfinUserExcludeTags, true);
+    for (const user of config.jellyfinUsers ?? []) {
+      add(user.name, user.tags, false);
+      add(user.name, user.excludeTags, true);
+    }
     return out;
-  }, [config.jellyfinUserName, config.addonName, config.jellyfinUserTags, config.jellyfinUsers]);
+  }, [config.jellyfinUserName, config.addonName, config.jellyfinUserTags, config.jellyfinUserExcludeTags, config.jellyfinUsers]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) setPendingDelete(null);
